@@ -11,6 +11,8 @@ s.waitForBoot {
 
 	// === CONFIGURATION SECTION ===
 	(
+		~volumeNormalization = -32.dbamp;
+
 		// OSC setup - adjust to match your Klavierautomat's network settings
 		~klavierautomatIP = "192.168.10.1";  // Klavierautomat's IP
 		~klavierautomatPort = 7000;          // Klavierautomat's port
@@ -228,8 +230,8 @@ s.waitForBoot {
 			var in, mono, chain, trig;
 
 			// All variables must be declared at the beginning
-			in = InFeedback.ar(0, 2);  // Listen to output bus 0 (stereo)
-			mono = Mix(in) / 2;        // Convert to mono
+			in = InFeedback.ar(0, 8) / ~volumeNormalization;  // Listen to output bus 0 (stereo)
+			mono = Mix(in) / 8;        // Convert to mono
 			chain = FFT(~fftBuffer, mono);
 			trig = Impulse.kr(30);     // Faster trigger rate (30 Hz) for better tracking
 
@@ -251,8 +253,8 @@ s.waitForBoot {
 			var i, harmonic, harmAmp;
 
 			// All variables must be declared at the beginning
-			in = InFeedback.ar(0, 2);     // Listen to output bus 0 (stereo)
-			mono = Mix(in) / 2;           // Convert to mono
+			in = InFeedback.ar(0, 8) / ~volumeNormalization;     // Listen to output bus 0 (stereo)
+			mono = Mix(in) / 8;           // Convert to mono
 			detectedFreqs = Array.fill(~numFreqsToTrack, 0);
 			detectedAmps = Array.fill(~numFreqsToTrack, 0);
 
@@ -310,8 +312,8 @@ s.waitForBoot {
 			var centroid, flatness, flux;
 
 			// All variables must be declared at the beginning
-			in = InFeedback.ar(0, 2);    // Listen to output bus 0 (stereo)
-			mono = Mix(in) / 2;          // Convert to mono
+			in = InFeedback.ar(0, 8) / ~volumeNormalization;    // Listen to output bus 0 (stereo)
+			mono = Mix(in) / 8;          // Convert to mono
 
 			// Use two overlapping FFT chains for better temporal resolution
 			chain = FFT(~fftBuffer, mono, wintype: 1);  // Hann window
@@ -346,8 +348,8 @@ s.waitForBoot {
 			fftAmount = In.kr(~fftAmountBus);
 
 			// Input and common variables
-			in = InFeedback.ar(0, 2);    // Listen to output bus 0 (stereo)
-			mono = Mix(in) / 2;          // Convert to mono
+			in = InFeedback.ar(0, 8) / ~volumeNormalization;    // Listen to output bus 0 (stereo)
+			mono = Mix(in) / 8;          // Convert to mono
 
 			// --- PITCH ANALYSIS SECTION ---
 			// Use Pitch UGen for frequency detection - optimized for glissando tracking
