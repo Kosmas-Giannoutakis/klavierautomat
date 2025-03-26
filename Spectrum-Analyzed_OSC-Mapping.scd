@@ -12,9 +12,9 @@ s.waitForBoot {
 	// === CONFIGURATION SECTION ===
 	(
 		// OSC setup - adjust to match your Klavierautomat's network settings
-		~KlavierautomatIP = "192.168.10.1";  // Klavierautomat's IP
-		~KlavierautomatPort = 7000;          // Klavierautomat's port
-		~KlavierautomatAddress = "/note";    // OSC address pattern
+		~klavierautomatIP = "192.168.10.1";  // Klavierautomat's IP
+		~klavierautomatPort = 7000;          // Klavierautomat's port
+		~klavierautomatAddress = "/note";    // OSC address pattern
 
 		// Analysis method selection
 		~analysisMethod = \combined;     // \fft, \pitch, \enhancedFft, or \combined
@@ -84,7 +84,7 @@ s.waitForBoot {
 		~magBuffer = Buffer.alloc(s, ~fftSize/2);
 
 		// Create OSC client
-		~oscClient = NetAddr(~KlavierautomatIP, ~KlavierautomatPort);
+		~oscClient = NetAddr(~klavierautomatIP, ~klavierautomatPort);
 	);
 
 	// === UTILITY FUNCTIONS ===
@@ -127,8 +127,8 @@ s.waitForBoot {
 		~sendNoteToKlavierautomat = {|note, velocity = 0.7|
 			var msg;
 			var intNote = note.asInteger;  // Ensure integer notes
-			msg = [~KlavierautomatAddress, intNote, velocity];
-			~oscClient.sendMsg(~KlavierautomatAddress, intNote, velocity);
+			msg = [~klavierautomatAddress, intNote, velocity];
+			~oscClient.sendMsg(~klavierautomatAddress, intNote, velocity);
 			"OSC: % -> %".format(~oscClient.ip, msg).postln;
 		};
 
@@ -136,8 +136,8 @@ s.waitForBoot {
 		~sendNoteOffToKlavierautomat = {|note|
 			var msg;
 			var intNote = note.asInteger;  // Ensure integer notes
-			msg = [~KlavierautomatAddress, intNote, 0];
-			~oscClient.sendMsg(~KlavierautomatAddress, intNote, 0);
+			msg = [~klavierautomatAddress, intNote, 0];
+			~oscClient.sendMsg(~klavierautomatAddress, intNote, 0);
 			"OSC: % -> %".format(~oscClient.ip, msg).postln;
 		};
 
@@ -1170,8 +1170,8 @@ s.waitForBoot {
 			);
 
 			"Created % analyzer synth.".format(~analysisMethod).postln;
-			"OSC client configured for IP: % port: %".format(~KlavierautomatIP, ~KlavierautomatPort).postln;
-			"Sending messages to address pattern: %".format(~KlavierautomatAddress).postln;
+			"OSC client configured for IP: % port: %".format(~klavierautomatIP, ~klavierautomatPort).postln;
+			"Sending messages to address pattern: %".format(~klavierautomatAddress).postln;
 			"Analyzer is monitoring the MAIN OUTPUT (not inputs).".postln;
 
 			if(~analysisMethod == \combined) {
@@ -1301,3 +1301,5 @@ a = NetAddr("192.168.10.1", 7000);
 a.sendMsg("/note", 60, 0.5);
 a.sendMsg("/note", 60, 0);
 a.sendMsg("/pedal", 0);
+
+a.sendMsg("/panic");
