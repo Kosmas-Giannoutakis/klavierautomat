@@ -68,6 +68,15 @@ s.waitForBoot {
 		~lastPedalValue = 0;  // Track the last sent pedal value
 		~pedalThreshold = 0.01;  // Minimum change required to send new pedal value
 
+		~pitchNoteMessageInterval = 0.1;   // Default 0.1 seconds for pitch
+		~fftNoteMessageInterval = 0.1;     // Default 0.1 seconds for FFT
+		~polyNoteMessageInterval = 0.1;    // Default 0.1 seconds for polypitch
+
+		// Tracking timestamps for each mode
+		~lastPitchMessageTime = 0;
+		~lastFftMessageTime = 0;
+		~lastPolyMessageTime = 0;
+
 		// ~monitorBus = Bus(\audio, 12, 1, s);  // Single channel monitor bus
 
 		// Function to update the slider buses from the MIDI sliders
@@ -495,6 +504,8 @@ s.waitForBoot {
 			var pitchFreq, hasFreq, pitchAmp;
 			var polyPitchOut, numVoices;
 			var pitchWeight, fftWeight, polyPitchWeight;
+			var ampThreshValue = ~knob.(61, 1e-5, 1, \exp);
+			var medianValue = ~knob.(62, 1, 10, \lin).round;
 
 			// Read weights from control buses - add a new one for PolyPitch
 			pitchWeight = In.kr(~pitchAmountBus);
@@ -510,8 +521,8 @@ s.waitForBoot {
 				initFreq: 200.0,
 				minFreq: ~minFreq,
 				maxFreq: ~maxFreq,
-				ampThreshold: 0.003,
-				median: 1  // Lower median for faster tracking
+				ampThreshold: ampThreshValue,
+				median: medianValue  // Lower median for faster tracking
 			);
 			pitchAmp = Amplitude.kr(mono);
 
@@ -1138,8 +1149,10 @@ s.waitForBoot {
 		};
 
 		// Modified version of processPeaksWithLatency for combined notes - IMPROVED FOR GLISSANDO
+		// Modified version of processNotesWithLatency for combined notes - IMPROVED FOR GLISSANDO
 		~processNotesWithLatency = {|notes, velocities, latency=0|
 			var notesToTurnOff, newNotes, currentTime, noteTimestamp;
+			var timeSinceLastMessage;
 
 			// Initialize note buffer if needed
 			if(~noteBuffer.isNil) {
@@ -1147,67 +1160,74 @@ s.waitForBoot {
 			};
 
 			currentTime = SystemClock.seconds;
+			timeSinceLastMessage = currentTime - ~lastNoteMessageTime;
 
-			// Safety check for nil notes
-			notes = notes ? [];
-			velocities = velocities ? [];
+			// Only process notes if enough time has passed since last message
+			if(timeSinceLastMessage >= ~noteMessageInterval) {
+				// Safety check for nil notes
+				notes = notes ? [];
+				velocities = velocities ? [];
 
-			// Ensure all notes are integers
-			notes = notes.collect(_.asInteger);
+				// Ensure all notes are integers
+				notes = notes.collect(_.asInteger);
 
-			// Debug - show what was detected with fewer messages
-			// if((notes.size > 0) && (0.2.coin)) { // Only print ~20% of the time to avoid flooding
-			//     "Combined notes: %".format(notes).postln;
-			// };
+				// Debug - show what was detected with fewer messages
+				// if((notes.size > 0) && (0.2.coin)) { // Only print ~20% of the time to avoid flooding
+				//     "Combined notes: %".format(notes).postln;
+				// };
 
-			// Find notes that need to be turned off
-			if(~prevNotes.notNil) {
-				notesToTurnOff = ~prevNotes.difference(notes);
+				// Find notes that need to be turned off
+				if(~prevNotes.notNil) {
+					notesToTurnOff = ~prevNotes.difference(notes);
 
-				if(notesToTurnOff.size > 0) {
-					notesToTurnOff.do({|note|
-						// Safety check: ensure note is not nil
-						if(note.notNil) {
-							// Get the timestamp safely (defaults to 0 if not found)
-							noteTimestamp = ~noteBuffer[note] ? 0;
+					if(notesToTurnOff.size > 0) {
+						notesToTurnOff.do({|note|
+							// Safety check: ensure note is not nil
+							if(note.notNil) {
+								// Get the timestamp safely (defaults to 0 if not found)
+								noteTimestamp = ~noteBuffer[note] ? 0;
 
-							// Use minimum duration to prevent quick note-offs
-							if((currentTime - noteTimestamp) < max(latency, ~minimumNoteDuration)) {
-								// Keep the note in the buffer - minimum duration not reached
-							} {
-								// Turn off notes that have been gone for longer than the minimum period
-								~sendNoteOffToKlavierautomat.(note);
-								// Record when we turned the note off for debouncing
-								~noteDebounce[note] = currentTime;
-								~noteBuffer.removeAt(note); // Clean up buffer
+								// Use minimum duration to prevent quick note-offs
+								if((currentTime - noteTimestamp) < max(latency, ~minimumNoteDuration)) {
+									// Keep the note in the buffer - minimum duration not reached
+								} {
+									// Turn off notes that have been gone for longer than the minimum period
+									~sendNoteOffToKlavierautomat.(note);
+									// Record when we turned the note off for debouncing
+									~noteDebounce[note] = currentTime;
+									~noteBuffer.removeAt(note); // Clean up buffer
+								};
 							};
+						});
+					};
+				};
+
+				// Send note-on messages for new notes
+				newNotes = notes.difference(~prevNotes ? []);
+				if(newNotes.size > 0) {
+					"Turning on new notes: %".format(newNotes).postln;
+					newNotes.do({|note|
+						var idx = notes.indexOf(note);
+						var lastOffTime = ~noteDebounce[note] ? 0;
+
+						// Add debounce to prevent rapid on/off cycling
+						if(idx.notNil && velocities[idx].notNil &&
+							((currentTime - lastOffTime) > ~debouncePeriod)) {
+							// Send note with velocity
+							~sendNoteToKlavierautomat.(note, velocities[idx]);
+
+							// Add to the buffer with current timestamp
+							~noteBuffer[note] = currentTime;
 						};
 					});
 				};
+
+				// Update the previous notes collection
+				~prevNotes = notes;
+
+				// Update the last message time
+				~lastNoteMessageTime = currentTime;
 			};
-
-			// Send note-on messages for new notes
-			newNotes = notes.difference(~prevNotes ? []);
-			if(newNotes.size > 0) {
-				"Turning on new notes: %".format(newNotes).postln;
-				newNotes.do({|note|
-					var idx = notes.indexOf(note);
-					var lastOffTime = ~noteDebounce[note] ? 0;
-
-					// Add debounce to prevent rapid on/off cycling
-					if(idx.notNil && velocities[idx].notNil &&
-						((currentTime - lastOffTime) > ~debouncePeriod)) {
-						// Send note with velocity
-						~sendNoteToKlavierautomat.(note, velocities[idx]);
-
-						// Add to the buffer with current timestamp
-						~noteBuffer[note] = currentTime;
-					};
-				});
-			};
-
-			// Update the previous notes collection
-			~prevNotes = notes;
 		};
 
 		~processPolyPitchData = {|freqs, saliences, numVoices|
@@ -1358,6 +1378,14 @@ s.waitForBoot {
 			var note, velocity, change, glissVelocity;
 			var polyNotes, polyVelocities;
 			var noteDict, stableNotes;
+			var currentTime, processPitch, processPoly, processFft;
+
+			currentTime = SystemClock.seconds;
+
+			// Check timing for each mode separately
+			processPitch = (currentTime - ~lastPitchMessageTime) >= ~pitchNoteMessageInterval;
+			processPoly = (currentTime - ~lastPolyMessageTime) >= ~polyNoteMessageInterval;
+			processFft = (currentTime - ~lastFftMessageTime) >= ~fftNoteMessageInterval;
 
 			// Extract weights from language-side variables
 			pitchAmount = ~pitchAmountValue;
@@ -1378,8 +1406,10 @@ s.waitForBoot {
 			combinedNotes = [];
 			combinedVelocities = [];
 
-			// Process Pitch data if weight is significant - using the existing utility function
-			if(~safeGreaterThan.(pitchAmount, 0.05) && ~safeGreaterThan.(hasFreq, 0.5) && ~safeGreaterThan.(pitchAmp, 0.01)) {
+			// Process Pitch data if weight is significant AND it's time to process pitch data
+			if(~safeGreaterThan.(pitchAmount, 0.05) && ~safeGreaterThan.(hasFreq, 0.5) &&
+				~safeGreaterThan.(pitchAmp, 0.01) && processPitch) {
+
 				note = ~freqToMIDI.(pitchFreq);
 				velocity = pitchAmp.linlin(0.01, 1.0, 0.3, 0.9) * pitchAmount;
 
@@ -1400,10 +1430,13 @@ s.waitForBoot {
 				// Add pitch note to the combined collection
 				combinedNotes = [note];
 				combinedVelocities = [velocity];
+
+				// Update last pitch processing time
+				~lastPitchMessageTime = currentTime;
 			};
 
-			// Process PolyPitch data if weight is significant
-			if(~safeGreaterThan.(polyPitchAmount, 0.05)) {
+			// Process PolyPitch data if weight is significant AND it's time to process poly data
+			if(~safeGreaterThan.(polyPitchAmount, 0.05) && processPoly) {
 				polyNotes = [];
 				polyVelocities = [];
 
@@ -1426,10 +1459,13 @@ s.waitForBoot {
 				// Add to combined collection
 				combinedNotes = combinedNotes ++ polyNotes;
 				combinedVelocities = combinedVelocities ++ polyVelocities;
+
+				// Update last polypitch processing time
+				~lastPolyMessageTime = currentTime;
 			};
 
-			// Process FFT data if weight is significant
-			if(~safeGreaterThan.(fftAmount, 0.05)) {
+			// Process FFT data if weight is significant AND it's time to process FFT data
+			if(~safeGreaterThan.(fftAmount, 0.05) && processFft) {
 				// Process the FFT data from the magBuffer
 				~analyzeEnhancedFFT.value(nil, {|fftNotesArray, fftVelocitiesArray|
 					// Need to redeclare variables for this function scope
@@ -1480,6 +1516,9 @@ s.waitForBoot {
 						~processNotesWithLatency.value(combinedNotes, combinedVelocities, 0.02);
 					};
 				});
+
+				// Update last FFT processing time
+				~lastFftMessageTime = currentTime;
 			} {
 				// If not using FFT, process the notes we have so far
 				// Apply note stability through history tracking
@@ -1575,6 +1614,11 @@ s.waitForBoot {
 				loop {
 					// Update the slider buses on each cycle
 					~updateSliderBuses.value;
+
+					// Use different knobs for each mode's timing
+					~pitchNoteMessageInterval = ~knobValue.(63, 1e-4, 2, \exp);  // Knob 63 for pitch
+					~fftNoteMessageInterval = ~knobValue.(73, 1e-4, 2, \exp);    // Knob 64 for FFT
+					~polyNoteMessageInterval = ~knobValue.(83, 1e-4, 2, \exp);   // Knob 65 for polypitch
 
 					// Each update, wait for the specified time
 					~updateRate.wait;
