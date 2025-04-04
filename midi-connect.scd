@@ -3,7 +3,6 @@ s.waitForBoot({
 
 	var sNums = [19,23,27,31,49,53,57,61,62];
 	var kNums = [[16,17,18],[20,21,22],[24,25,26],[28,29,30],[46,47,48],[50,51,52],[54,55,56],[58,59,60]];
-	var bNums = [1,4,7,10,13,16,19,22,27,3,6,9,12,15,18,21,24,25,26];
 
 	var knobs=8.collect({3.collect({Bus.control(s, 1)})});
 	~sliders=9.collect({Bus.control(s, 1)});
@@ -32,11 +31,11 @@ s.waitForBoot({
 
 	};
 
-	bNums.do { |bnum, index|
-		MIDIdef.noteOn(("button" ++ bnum).asSymbol, { |val,num|
-			~memeBufs[index].play;
-		}, bnum).permanent_(true);
-	};
+	MIDIdef.noteOn(\panicButton, { |val, num|
+		// Send panic message directly with no additional logic
+		~oscClient.sendMsg("/panic");
+		"PANIC message sent to %".format(~klavierautomatIP).postln;
+	}, 27).permanent_(true);
 
 	~slider = {
 		arg num;

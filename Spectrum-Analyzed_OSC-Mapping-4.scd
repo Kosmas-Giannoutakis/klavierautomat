@@ -1704,6 +1704,7 @@ s.waitForBoot {
 			~lastDetectedFreq = nil;
 
 			"Cleaned up resources.".postln;
+
 		};
 	);
 
