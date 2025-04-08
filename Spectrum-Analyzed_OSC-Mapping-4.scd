@@ -67,6 +67,10 @@ s.waitForBoot {
 		~fftNoteMessageInterval = 0.1;     // Default 0.1 seconds for FFT
 		~polyNoteMessageInterval = 0.1;    // Default 0.1 seconds for polypitch
 
+		~pitchTimingIrregularity = 0;     // 0 = regular timing, 1 = maximum irregularity
+		~fftTimingIrregularity = 0;       // 0 = regular timing, 1 = maximum irregularity
+		~polyTimingIrregularity = 0;      // 0 = regular timing, 1 = maximum irregularity
+
 		// Tracking timestamps for each mode
 		~lastPitchMessageTime = 0;
 		~lastFftMessageTime = 0;
@@ -85,6 +89,10 @@ s.waitForBoot {
 			var bassSensitivity = ~knobValue.(71, 0, 1);  // Use knob 71 for bass sensitivity
 			var bassBoost = ~knobValue.(72, 0, 1);        // Use knob 72 for bass boost/emphasis
 
+			var pitchIrregularity = ~knobValue.(62, 0, 1);  // Knob 62 for pitch timing irregularity
+			var fftIrregularity = ~knobValue.(72, 0, 1);    // Knob 72 for FFT timing irregularity
+			var polyIrregularity = ~knobValue.(82, 0, 1);   // Knob 82 for polypitch timing irregularity
+
 			// Add pedal control from slider 4
 			var pedalValue = ~sliderValue.value(4);
 
@@ -102,6 +110,11 @@ s.waitForBoot {
 			~bassSensitivityBus.set(bassSensitivity);
 			~bassBoostBus.set(bassBoost);
 			~pedalBus.set(pedalValue);
+
+			// Update the irregularity values
+			~pitchTimingIrregularity = pitchIrregularity;
+			~fftTimingIrregularity = fftIrregularity;
+			~polyTimingIrregularity = polyIrregularity;
 
 			// Only send OSC messages if pedal value has changed significantly
 			if((pedalValue - ~lastPedalValue).abs > ~pedalThreshold) {
@@ -298,11 +311,11 @@ s.waitForBoot {
 			polyPitchOut = PolyPitch.kr(
 				mono,
 				maxvoices: ~numFreqsToTrack,
-				levelcompressionfactor: -0.02,
-				mixleftterm: 1.5,
-				torprec: 1e-05,
-				cancellationweight: 0.7,
-				polyphonyestimategamma: 0.4
+				levelcompressionfactor: -0.07,
+				mixleftterm: 3.0,
+				torprec: 1e-07,
+				cancellationweight: 0.8,
+				polyphonyestimategamma: 0.72
 			);
 
 			// FFT analysis chain for spectral content
@@ -604,12 +617,21 @@ s.waitForBoot {
 			var noteDict, stableNotes;
 			var currentTime, processPitch, processPoly, processFft;
 
+			var pitchInterval = ~pitchNoteMessageInterval * (1 + (rrand(-1.0, 1.0) * ~pitchTimingIrregularity));
+			var polyInterval = ~polyNoteMessageInterval * (1 + (rrand(-1.0, 1.0) * ~polyTimingIrregularity));
+			var fftInterval = ~fftNoteMessageInterval * (1 + (rrand(-1.0, 1.0) * ~fftTimingIrregularity));
+
+			// Make sure intervals don't go below a minimum value
+			pitchInterval = max(0.01, pitchInterval);
+			polyInterval = max(0.01, polyInterval);
+			fftInterval = max(0.01, fftInterval);
+
 			currentTime = SystemClock.seconds;
 
 			// Check timing for each mode separately
-			processPitch = (currentTime - ~lastPitchMessageTime) >= ~pitchNoteMessageInterval;
-			processPoly = (currentTime - ~lastPolyMessageTime) >= ~polyNoteMessageInterval;
-			processFft = (currentTime - ~lastFftMessageTime) >= ~fftNoteMessageInterval;
+			processPitch = (currentTime - ~lastPitchMessageTime) >= pitchInterval;
+			processPoly = (currentTime - ~lastPolyMessageTime) >= polyInterval;
+			processFft = (currentTime - ~lastFftMessageTime) >= fftInterval;
 
 			// Extract weights from language-side variables
 			pitchAmount = ~pitchAmountValue;
@@ -803,6 +825,9 @@ s.waitForBoot {
 			"  Knob 72: Bass emphasis/boost - increase to make bass notes louder".postln;
 			"  Knob 73: FFT timing - controls how often FFT notes can change".postln;
 			"  Knob 83: PolyPitch timing - controls how often polyphonic notes can change".postln;
+			"  Knob 62: Pitch timing irregularity - adds randomness to pitch note timing".postln;
+			"  Knob 72: FFT timing irregularity - adds randomness to FFT note timing".postln;
+			"  Knob 82: PolyPitch timing irregularity - adds randomness to polyphonic note timing".postln;
 			"  Slider 6: Pitch analysis amount - good for monophonic content and glissandi".postln;
 			"  Slider 7: FFT analysis amount - good for noisy/percussive content".postln;
 			"  Slider 8: PolyPitch amount - good for polyphonic content".postln;
@@ -813,9 +838,9 @@ s.waitForBoot {
 					~updateSliderBuses.value;
 
 					// Use different knobs for each mode's timing
-					~pitchNoteMessageInterval = ~knobValue.(63, 0.033, 2, \exp);  // Knob 63 for pitch timing
-					~fftNoteMessageInterval = ~knobValue.(73, 0.033, 2, \exp);    // Knob 73 for FFT timing
-					~polyNoteMessageInterval = ~knobValue.(83, 0.033, 2, \exp);   // Knob 83 for polypitch timing
+					~pitchNoteMessageInterval = ~knobValue.(63, 0.033, 4, \exp);  // Knob 63 for pitch timing
+					~fftNoteMessageInterval = ~knobValue.(73, 0.033, 4, \exp);    // Knob 73 for FFT timing
+					~polyNoteMessageInterval = ~knobValue.(83, 0.033, 4, \exp);   // Knob 83 for polypitch timing
 
 					// Each update, wait for the specified time
 					~updateRate.wait;
@@ -897,6 +922,7 @@ s.waitForBoot {
 ~stopAnalysis.value;
 
 // Clean up resources when completely done
+
 ~cleanup.value;
 
 // Send a panic message (all notes off)
@@ -908,3 +934,13 @@ s.waitForBoot {
 
 // Send pedal message example
 ~sendPedalToKlavierautomat.value(0.5);  // Half pedal
+
+
+
+// Send pedal message
+a = NetAddr("192.168.10.1", 7000);
+a.sendMsg("/note", 60, 1);
+a.sendMsg("/note", 60, 0);
+a.sendMsg("/pedal", 0);
+
+a.sendMsg("/panic");

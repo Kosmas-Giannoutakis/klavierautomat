@@ -11,8 +11,8 @@ s.waitForBoot({
 
 	MIDIdef.cc(("masterVolume").asSymbol, { |val|
 		var normalizedValue = val/127; // Normalize to 0-1
-		var curvedValue = normalizedValue ** 4; // Apply a power of 4 curve
-		var dbValue = [-80, -12, \exp].asSpec.map(curvedValue); // Map to dB using asSpec
+		var curvedValue = normalizedValue ** 3; // Apply a power of 4 curve
+		var dbValue = [-90, -12, \exp].asSpec.map(curvedValue); // Map to dB using asSpec
 		s.volume = dbValue;
 	}, 62).permanent_(true); // Use correct CC number 62
 
